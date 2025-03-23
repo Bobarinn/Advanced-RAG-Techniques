@@ -9,6 +9,15 @@ from pypdf import PdfReader
 import numpy as np
 import umap
 
+from langchain.text_splitter import (
+    RecursiveCharacterTextSplitter,
+    SentenceTransformersTokenTextSplitter,
+)
+
+import chromadb
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+import matplotlib.pyplot as plt
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -23,10 +32,7 @@ pdf_texts = [p.extract_text().strip() for p in reader.pages]
 pdf_texts = [text for text in pdf_texts if text]
 
 
-from langchain.text_splitter import (
-    RecursiveCharacterTextSplitter,
-    SentenceTransformersTokenTextSplitter,
-)
+
 
 character_splitter = RecursiveCharacterTextSplitter(
     separators=["\n\n", "\n", ". ", " ", ""], chunk_size=1000, chunk_overlap=0
@@ -42,9 +48,7 @@ token_split_texts = []
 for text in character_split_texts:
     token_split_texts += token_splitter.split_text(text)
 
-# now we import chromadb and the SentenceTransformerEmbeddingFunction
-import chromadb
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+# now we import chromadb and the SentenceTransformerEmbeddingFunct
 
 
 embedding_function = SentenceTransformerEmbeddingFunction()
@@ -114,7 +118,7 @@ joint_query = [
     original_query
 ] + aug_queries  # original query is in a list because chroma can actually handle multiple queries, so we add it in a list
 
-# print("======> \n\n", joint_query)
+print("======> \n\n", joint_query)
 
 results = chroma_collection.query(
     query_texts=joint_query, n_results=5, include=["documents", "embeddings"]
@@ -137,6 +141,26 @@ for i, documents in enumerate(retrieved_documents):
         print(word_wrap(doc))
         print("")
     print("-" * 100)
+    
+def final_response(question, relevant_chunks):
+    context = "\n\n".join(relevant_chunks)
+    prompt = (
+        "You are an assistant for question-answering tasks. Use the following pieces of "
+        "retrieved context to answer the question. If you don't know the answer, say that you "
+        "don't know. Use three sentences maximum and keep the answer concise."
+        "\n\nContext:\n" + context + "\n\nQuestion:\n" + question
+    )
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": question},
+        ],
+    )
+    answer = response.choices[0].message.content
+    return answer
+
+final_response(original_query, unique_documents)
 
 embeddings = chroma_collection.get(include=["embeddings"])["embeddings"]
 umap_transform = umap.UMAP(random_state=0, transform_seed=0).fit(embeddings)
@@ -157,7 +181,7 @@ result_embeddings = [item for sublist in retrieved_embeddings for item in sublis
 
 projected_result_embeddings = project_embeddings(result_embeddings, umap_transform)
 
-import matplotlib.pyplot as plt
+
 
 
 # Plot the projected query and retrieved documents in the embedding space
